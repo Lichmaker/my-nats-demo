@@ -50,10 +50,23 @@ func main() {
 	// go sendToRequestDemo(wg, natsEncodedConnect)
 
 	// 测试订阅一个group
+	// wg := &sync.WaitGroup{}
+	// wg.Add(1)
+	// go publishMsgDemo(wg, natsEncodedConnect)
+	// go subscribeQueueDemo(wg, natsEncodedConnect)
+
+	// 测试使用同步消息接受
+	// wg := &sync.WaitGroup{}
+	// wg.Add(1)
+	// go publishMsgDemo(wg, natsEncodedConnect)
+	// go subscribeWithSync(wg, natsEncodedConnect)
+
+	// 测试使用同步消息来接受request
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go publishMsgDemo(wg, natsEncodedConnect)
-	go subscribeQueueDemo(wg, natsEncodedConnect)
+	myInbox := nats.NewInbox()
+	go subscribeRequestWithInboxDemo(wg, myInbox, natsEncodedConnect)
+	go sendToSyncRequestDemo(wg, myInbox, natsEncodedConnect)
 
 	// 大吞吐量的时候， 不会所有消息都马上发到nats server，有可能会到一个buffer里。
 	// 按照文档说明，调用flush的时候，会马上处理缓冲区，并且会发一个ping到server， 接收到一个pong之后会返回。
@@ -149,4 +162,69 @@ func subscribeQueueDemo(wg *sync.WaitGroup, conn *nats.EncodedConn) {
 		}
 	}()
 	wg.Done()
+}
+
+func subscribeWithSync(wg *sync.WaitGroup, conn *nats.EncodedConn) {
+	syncSub, err := conn.Conn.SubscribeSync(MY_TOPIC)
+	if err != nil {
+		panic(err)
+	}
+	wg.Done()
+	for i := 0; i < 30; i++ {
+		getMsg, err := syncSub.NextMsg(time.Second)
+		if err != nil {
+			fmt.Println("同步消息订阅，nextMsg get err : " + err.Error())
+			return
+		}
+		fmt.Println("同步拿消息成功" + string(getMsg.Data))
+	}
+
+}
+
+func subscribeRequestWithInboxDemo(wg *sync.WaitGroup, inboxString string, conn *nats.EncodedConn) {
+	sb, err := conn.Conn.SubscribeSync(MY_TOPIC_REQUEST)
+	if err != nil {
+		panic(err)
+	}
+	wg.Done()
+	for i := 0; i < 30; i++ {
+		getMsg, err := sb.NextMsg(time.Second * 5)
+		if err != nil {
+			fmt.Println("同步消息订阅，nextMsg get err : " + err.Error())
+			return
+		}
+		getMsg.Respond([]byte("接受成功，发一个respond"))
+	}
+}
+
+func sendToSyncRequestDemo(wg *sync.WaitGroup, inboxString string, conn *nats.EncodedConn) {
+	wg.Wait()
+
+	go func() {
+
+		for i := 0; i < 10; i++ {
+			err := conn.PublishRequest(MY_TOPIC_REQUEST, inboxString, "我是一条request消息")
+			if err != nil {
+				panic(err)
+			}
+			time.Sleep(time.Second)
+		}
+	}()
+
+	time.Sleep(time.Second * 2)
+
+	// 订阅inbox，从inbox里拿消息
+	sb, err := conn.Conn.SubscribeSync(inboxString)
+	if err != nil {
+		panic(err)
+	}
+
+	for i := 0; i < 30; i++ {
+		msg, err := sb.NextMsg(time.Second * 5)
+		if err != nil {
+			fmt.Println("从inbox拿消息捕捉错误 " + err.Error())
+			return
+		}
+		fmt.Printf("%d 收到reply: %s \n", time.Now().Unix(), msg.Data)
+	}
 }
