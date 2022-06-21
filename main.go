@@ -22,7 +22,11 @@ func main() {
 			// Note that this will be invoked for the first asynchronous connect.
 			fmt.Println("成功重新连接到nats")
 		}),
-		nats.UserInfo("lichmaker", "123456"))
+		nats.DisconnectHandler(func(c *nats.Conn) {
+			fmt.Println("连接失败： " + c.LastError().Error())
+		}),
+		nats.UserInfo("lichmaker", "123456"),
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -37,11 +41,11 @@ func main() {
 	fmt.Println("build the encoded connects ...")
 
 	// // 测试订阅
-	// wg := &sync.WaitGroup{}
-	// wg.Add(1)
-	// go subscribeDemo(wg, natsEncodedConnect)
-	// // 测试发送消息
-	// go publishMsgDemo(wg, natsEncodedConnect)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go subscribeDemo(wg, natsEncodedConnect)
+	// 测试发送消息
+	go publishMsgDemo(wg, natsEncodedConnect)
 
 	// 测试订阅一个request
 	// wg := &sync.WaitGroup{}
@@ -62,11 +66,11 @@ func main() {
 	// go subscribeWithSync(wg, natsEncodedConnect)
 
 	// 测试使用同步消息来接受request
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	myInbox := nats.NewInbox()
-	go subscribeRequestWithInboxDemo(wg, myInbox, natsEncodedConnect)
-	go sendToSyncRequestDemo(wg, myInbox, natsEncodedConnect)
+	// wg := &sync.WaitGroup{}
+	// wg.Add(1)
+	// myInbox := nats.NewInbox()
+	// go subscribeRequestWithInboxDemo(wg, myInbox, natsEncodedConnect)
+	// go sendToSyncRequestDemo(wg, myInbox, natsEncodedConnect)
 
 	// 大吞吐量的时候， 不会所有消息都马上发到nats server，有可能会到一个buffer里。
 	// 按照文档说明，调用flush的时候，会马上处理缓冲区，并且会发一个ping到server， 接收到一个pong之后会返回。
